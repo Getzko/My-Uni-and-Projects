@@ -1,6 +1,7 @@
 from robocorp.tasks import task
 from robocorp import windows
 from RPA.Desktop.Windows import Desktop
+import json
 desktop = windows.desktop()
 desktop2=Desktop()
 
@@ -9,15 +10,21 @@ desktop2=Desktop()
 def main():
     open_ltspice()
     extract_voltage()
+    get_components()
 
-
+def json_function():
+    with open("strings.json") as f:
+        d=json.load(f)
 
 def open_ltspice():
     desktop.windows_run(r"C:\apps\ltsipce\LTspice.exe")
     ltspice = windows.find_window('regex:.*LTspice')
 
     ltspice.send_keys("{Ctrl}o") #open a new file
-    ltspice.find("path:1|1|1|4|1|1|2|5").click()#click on Downloads (where the circuit file is located on my PC)
+
+    #CHANGE THE NEXT 2 LINES SO IT OPENS FROM THE JSON FILE LATER
+
+    ltspice.find("path:1|1|1|4|1|1|2|5").click()#click on Downloads (where the circuit file is located on ur PC so: C:\Users\katie\Downloads for example)
     ltspice.find("path:1|1|1|4|2|1|4|3|1").click()#click on the file
     ltspice.find("path:1|5").click()#click open
 
@@ -28,7 +35,9 @@ def open_ltspice():
     ltspice.send_keys("{Ctrl}l")#opens the output log
     ltspice.find("automationid:1178").click() #clicks on the text
     desktop.send_keys("{Ctrl}a")#select all text
-    desktop.send_keys("{Ctrl}c")#copy the text
+    desktop.send_keys("{Ctrl}c")#copies the text
+    ltspice.find("automationid:1178").click() #clicks on the text
+    ltspice.find("name:Close").click()#this is the path for the x button to close the log window
 
 
 
@@ -36,13 +45,56 @@ def extract_voltage():
     desktop = windows.Desktop()
     raw_text=desktop2.get_clipboard_value()
     row=raw_text.split("\n")[16]
-    print(row)
     voltage_string=row.split(" ")[1]
     voltage=voltage_string.split("=")[1]
-    desktop.windows_run('notepad.exe')
-    note = windows.find_window("regex:.*Untitled")
-    note.send_keys(voltage)
+    print(voltage)
 
+def get_components():
+    #if voltage is within approved voltage, this function runs
+    BOM_dictionary={}
+    desktop=windows.Desktop()
+    ltspice = windows.find_window('regex:.*LTspice')
+
+    ltspice.find("name:View").click()
+    ltspice.find("name:Bill of Materials").mouse_hover()
+    ltspice.find("Paste to clipboard").click()
+    bom=desktop2.get_clipboard_value()
+
+    desktop.windows_run('notepad.exe')
+    note = windows.find_window("regex:.*Untitled") #CHANGE THIS LATER SO IT OPENS FROM THE JSON FILE
+    note.send_keys(bom)
+    note.send_keys("{Ctrl}s")
+
+    
+    #EXTRACTING THE FIRST PART INFORMATION IN THE LIST
+    bom_line_M1=bom.split("\n")[3] #splits the string by new lines and saves the first part information line
+    bom_M1=bom_line_M1.split("\t") #splits the first part line by tabs
+
+    #EXTRACTING THE SECOND MATERIAL IN THE LIST
+    bom_line_Q1=bom.split("\n")[4] 
+    bom_Q1=bom_line_Q1.split("\t") 
+
+    #EXTRACTING THE THIRD MATERIAL IN THE LIST
+    bom_line_R1=bom.split("\n")[5] 
+    bom_R1=bom_line_R1.split("\t")
+
+    #EXTRACTING THE FOURTH MATERIAL IN THE LIST
+    bom_line_R2=bom.split("\n")[6] 
+    bom_R2=bom_line_R2.split("\t")
+    
+    #EXTRACTING THE FIFTH MATERIAL IN THE LIST
+    bom_line_R3=bom.split("\n")[7] 
+    bom_R3=bom_line_R3.split("\t")
+
+    BOM_dictionary={
+                bom_M1[0]:{"Manufacturer:":bom_M1[1],"Part Number:":bom_M1[2]},
+                bom_Q1[0]:{"Manufacturer:":bom_Q1[1],"Part Number:":bom_Q1[2]},
+                bom_R1[0]:{"Manufacturer:":bom_R1[1],"Part Number:":bom_R1[2]},
+                bom_R2[0]:{"Manufacturer:":bom_R2[1],"Part Number:":bom_R2[2]},
+                bom_R3[0]:{"Manufacturer:":bom_R3[1],"Part Number:":bom_R3[2]}
+    }
+    print(BOM_dictionary)
+    
 
 
 
