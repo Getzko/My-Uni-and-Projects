@@ -1,0 +1,12 @@
+
+    {
+        "disclaimer":"change these settings as needed",
+        "ltspice":"C:\apps\ltsipce\LTspice.exe",
+        "notepad":"notepad.exe",
+        "circuit_a":"path:1|1|1|4|1|1|2|5",
+        "circuit_b":"-",
+        "threshold":12,
+        "odoo_url":"https://www.odoo.com/odoo-enterprise/template/53546?token=f1ea832e-97a1-4d41-abf3-eb2991c81899",
+        "username":"-",
+        "password":"-"
+    }
