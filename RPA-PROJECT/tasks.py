@@ -1,7 +1,13 @@
+from logging import config
+from anyio import open_file
 from robocorp.tasks import task
+from robocorp import browser
 from robocorp import windows
 from RPA.Desktop.Windows import Desktop
 import json
+import time
+
+#Place for global variables
 desktop = windows.desktop()
 desktop2=Desktop()
 
@@ -9,29 +15,36 @@ desktop2=Desktop()
 @task
 def main():
     open_ltspice()
-    extract_voltage()
-    get_components()
+    voltage, is_ok=extract_voltage()
+    if is_ok:
+        get_components()
+    else:
+        print("Voltage check failed. Process halted.")
 
 def json_function():
-    with open("strings.json") as f:
-        d=json.load(f)
+    with open("config.json") as f:
+        return json.load(f)
 
 def open_ltspice():
-    desktop.windows_run(r"C:\apps\ltsipce\LTspice.exe")
-    ltspice = windows.find_window('regex:.*LTspice')
-
+    config=json_function()
+    desktop.windows_run(config["ltspice"])
+    ltspice = windows.find_window('regex:.*LTspice',search_depth=1)
     ltspice.send_keys("{Ctrl}o") #open a new file
-
+    open_file=windows.find_window("regex:.*Open.",search_depth=2)
+    open_file.send_keys(config["circuit_a"])
+    time.sleep(0.2)
+    open_file.send_keys("{Enter}")
+    '''
     #CHANGE THE NEXT 2 LINES SO IT OPENS FROM THE JSON FILE LATER
 
-    ltspice.find("path:1|1|1|4|1|1|2|5").click()#click on Downloads (where the circuit file is located on ur PC so: C:\Users\katie\Downloads for example)
+    ltspice.find(config["circuit_a"]).click()#click on Downloads (where the circuit file is located on ur PC so: C:\Users\katie\Downloads for example)
     ltspice.find("path:1|1|1|4|2|1|4|3|1").click()#click on the file
     ltspice.find("path:1|5").click()#click open
+    ''' 
+    #I think this is a better option (above)
 
     ltspice.set_window_pos(0,0,desktop.width/2,desktop.height)
-
     ltspice.send_keys("{Alt}{R}")
-
     ltspice.send_keys("{Ctrl}l")#opens the output log
     ltspice.find("automationid:1178").click() #clicks on the text
     desktop.send_keys("{Ctrl}a")#select all text
@@ -39,20 +52,28 @@ def open_ltspice():
     ltspice.find("automationid:1178").click() #clicks on the text
     ltspice.find("name:Close").click()#this is the path for the x button to close the log window
 
-
-
 def extract_voltage():
-    desktop = windows.Desktop()
+    config=json_function()
+    threshold=config["threshold"]
     raw_text=desktop2.get_clipboard_value()
-    row=raw_text.split("\n")[16]
-    voltage_string=row.split(" ")[1]
-    voltage=voltage_string.split("=")[1]
-    print(voltage)
+    try:
+        row=raw_text.split("\n")[16]
+        voltage_string=row.split(" ")[1]
+        voltage=float(voltage_string.split("=")[1])
+        print(f"Extracted voltage: {voltage}")
+        if voltage<=threshold:
+            print("Voltage is within approved threshold. Continuing.")
+            return voltage, True
+        else:
+            print("Voltage exceeds approved threshold. Halting process.")
+            return voltage, False
+    except Exception as e:
+        print(f"Error extracting voltage: {e}")
+        return None
 
 def get_components():
     #if voltage is within approved voltage, this function runs
     BOM_dictionary={}
-    desktop=windows.Desktop()
     ltspice = windows.find_window('regex:.*LTspice')
 
     ltspice.find("name:View").click()
@@ -95,6 +116,19 @@ def get_components():
     }
     print(BOM_dictionary)
     
+def open_login_odoo():
+    config=json_function()
+    browser.goto(config["odoo_url"])
+    page=browser.page()
+    page.click("button:text('Sign in')")
+    page.fill('#login',config["odoo_user"])
+    page.fill('#password',config["odoo_pass"])
+    time.sleep(1)
+    page.click("button:text('Sign in')")
+
+def create_product():
+    pass
+
 
 
 
