@@ -14,12 +14,19 @@ desktop2=Desktop()
 
 @task
 def main():
+    browser.configure(slowmo=1000)
+    
+
     open_ltspice()
+    
+    
     voltage, is_ok=extract_voltage()
     if is_ok:
-        get_components()
+        component_list=get_components()
     else:
         print("Voltage check failed. Process halted.")
+
+    open_login_odoo(component_list)
 
 def json_function():
     with open("config.json") as f:
@@ -34,17 +41,11 @@ def open_ltspice():
     open_file.send_keys(config["circuit_a"])
     time.sleep(0.2)
     open_file.send_keys("{Enter}")
-    '''
-    #CHANGE THE NEXT 2 LINES SO IT OPENS FROM THE JSON FILE LATER
-
-    ltspice.find(config["circuit_a"]).click()#click on Downloads (where the circuit file is located on ur PC so: C:\Users\katie\Downloads for example)
-    ltspice.find("path:1|1|1|4|2|1|4|3|1").click()#click on the file
-    ltspice.find("path:1|5").click()#click open
-    ''' 
-    #I think this is a better option (above)
 
     ltspice.set_window_pos(0,0,desktop.width/2,desktop.height)
-    ltspice.send_keys("{Alt}{R}")
+    ltspice.find("name:Run/Pause").click() #had to change this cuz the alt + r didnt work = the signal panel wasnt showing up
+    
+    time.sleep(2)
     ltspice.send_keys("{Ctrl}l")#opens the output log
     ltspice.find("automationid:1178").click() #clicks on the text
     desktop.send_keys("{Ctrl}a")#select all text
@@ -73,6 +74,9 @@ def extract_voltage():
 
 def get_components():
     #if voltage is within approved voltage, this function runs
+    config=json_function()
+    BOM_location=config["Bill_of_Materials"]
+
     BOM_dictionary={}
     ltspice = windows.find_window('regex:.*LTspice')
 
@@ -81,8 +85,8 @@ def get_components():
     ltspice.find("Paste to clipboard").click()
     bom=desktop2.get_clipboard_value()
 
-    desktop.windows_run('notepad.exe')
-    note = windows.find_window("regex:.*Untitled") #CHANGE THIS LATER SO IT OPENS FROM THE JSON FILE
+    desktop.windows_run(BOM_location)
+    note = windows.find_window("regex:.*BOM_text_file") #CHANGE THIS LATER SO IT OPENS FROM THE JSON FILE
     note.send_keys(bom)
     note.send_keys("{Ctrl}s")
 
@@ -108,29 +112,52 @@ def get_components():
     bom_R3=bom_line_R3.split("\t")
 
     BOM_dictionary={
-                bom_M1[0]:{"Manufacturer:":bom_M1[1],"Part Number:":bom_M1[2]},
-                bom_Q1[0]:{"Manufacturer:":bom_Q1[1],"Part Number:":bom_Q1[2]},
-                bom_R1[0]:{"Manufacturer:":bom_R1[1],"Part Number:":bom_R1[2]},
-                bom_R2[0]:{"Manufacturer:":bom_R2[1],"Part Number:":bom_R2[2]},
-                bom_R3[0]:{"Manufacturer:":bom_R3[1],"Part Number:":bom_R3[2]}
+                bom_M1[0]:{"Manufacturer:":bom_M1[1],"Part Number:":bom_M1[2],"Name:":bom_M1[3]},
+                bom_Q1[0]:{"Manufacturer:":bom_Q1[1],"Part Number:":bom_Q1[2],"Name:":bom_Q1[3]},
+                bom_R1[0]:{"Manufacturer:":bom_R1[1],"Part Number:":bom_R1[2],"Name:":bom_R1[3]},
+                bom_R2[0]:{"Manufacturer:":bom_R2[1],"Part Number:":bom_R2[2],"Name:":bom_R2[3]},
+                bom_R3[0]:{"Manufacturer:":bom_R3[1],"Part Number:":bom_R3[2],"Name:":bom_R3[3]}
     }
-    print(BOM_dictionary)
-    
-def open_login_odoo():
+    return BOM_dictionary
+
+def open_login_odoo(component_list):#7+8+9 subsections from the assignment
     config=json_function()
     browser.goto(config["odoo_url"])
     page=browser.page()
-    page.click("button:text('Sign in')")
     page.fill('#login',config["odoo_user"])
     page.fill('#password',config["odoo_pass"])
     time.sleep(1)
-    page.click("button:text('Sign in')")
+    page.click("button:text('Log in')")
+    page.wait_for_selector("#result_app_4")
+    page.locator("#result_app_4").click() #clicks on "manufacturing"
 
-def create_product():
-    pass
+    page.wait_for_selector("button.fw-normal:nth-child(4) > span:nth-child(1)")
+    page.locator("button.fw-normal:nth-child(4) > span:nth-child(1)").click() #clicks on "products" dropdown menu
+    page.locator(".o_popover > a:nth-child(1)").click() #clicks on "Products"
+
+    page.locator("button:text('New')").click()
+    page.locator("#name_0").fill(config["circuit_a_name"])#gets the first part's name
+    page.locator(".o_form_button_save").click()#saves the part
+
+    page.locator(".o_menu_brand").click()#goes back to main page
+    page.wait_for_selector("#result_app_4")
+    page.locator("#result_app_4").click() #clicks on "manufacturing"
+    page.wait_for_selector("button.fw-normal:nth-child(4) > span:nth-child(1)")
+    page.locator("button.fw-normal:nth-child(4) > span:nth-child(1)").click() #clicks on "products" dropdown menu
+    page.locator("a.o-dropdown-item:nth-child(2)").click()#clicks on "Bill of Materials" 
+
+    page.locator("button:text('New')").click() #clicks on "New"
+    page.locator("#product_tmpl_id_0").fill(config["circuit_a_name"])#fills in the circuit name form the json file
+    desktop.send_keys("{Enter}")#saves the name
 
 
+    
+    for ref, data in component_list.items():
+        print(f"Adding {ref}: {data['Manufacturer:']} {data['Part Number:']}")
 
-
-
-
+        page.locator(".o_field_x2many_list_row_add > a:nth-child(1)").click() #click add new line
+        desktop.send_keys(data["Manufacturer:"])#fills in "Manufacturer"
+        desktop.send_keys(" ")
+        desktop.send_keys(data["Part Number:"])#fills in "Part NUmber"
+        desktop.send_keys("{Enter}")
+        page.locator(".o_form_button_save").click()#saves the Bill of Materials
