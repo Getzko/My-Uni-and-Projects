@@ -14,7 +14,7 @@ desktop2=Desktop()
 
 @task
 def main():
-    browser.configure(slowmo=1000)
+    browser.configure(slowmo=500)
     
 
     open_ltspice()
@@ -120,7 +120,7 @@ def get_components():
     }
     return BOM_dictionary
 
-def open_login_odoo(component_list):#7+8+9 subsections from the assignment
+def open_login_odoo(component_list):
     config=json_function()
     browser.goto(config["odoo_url"])
     page=browser.page()
@@ -161,3 +161,15 @@ def open_login_odoo(component_list):#7+8+9 subsections from the assignment
         desktop.send_keys(data["Part Number:"])#fills in "Part NUmber"
         desktop.send_keys("{Enter}")
         page.locator(".o_form_button_save").click()#saves the Bill of Materials
+
+    page.locator("button.fw-normal:nth-child(2)").click() #clicks on Operations
+    page.locator("a:text('Manufacturing Orders')").click()#clicks on Manufacturing Orders
+    page.locator("button:text('New')").click()#clicks on new
+    page.locator("#product_id_0").fill(config["circuit_a_name"])#names the new order from the json file
+    desktop.send_keys("{Enter}")
+
+    page.locator("#product_qty_0").fill(config["quantity_to_manufacture_A"])#sets the quantity from the json file
+    page.locator(".o_form_button_save").click()# saves the order
+    page.screenshot(path=".output\manufacturing_order.png") #takes a screenshot of the manufacturing order
+    time.sleep(5)
+
