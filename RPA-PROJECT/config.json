@@ -1,6 +1,6 @@
 
     {
-        "disclaimer":"change these settings as needed",
+        "disclaimer":"change these settings as needed depending on which circuit you want to simulate",
         "ltspice":"C:\\apps\\ltsipce\\LTspice.exe",
         "notepad":"notepad.exe",
         "circuit_a_name":"Circuit_A",
@@ -8,7 +8,7 @@
         "circuit_a":"C:\\Users\\katar\\Downloads\\pmos-switch-circuit-A.asc",
         "quantity_to_manufacture_A":"50",
         "circuit_b":"-",
-        "threshold":25,
+        "threshold":"25",
         "Bill_of_Materials":"C:\\Users\\katar\\Desktop\\BOM_text_file.txt",
         "odoo_url":"https://edu-hamk.odoo.com/odoo",
         "odoo_user":"katarina.culenova10@gmail.com",
