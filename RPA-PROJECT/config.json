@@ -6,6 +6,7 @@
         "circuit_a_name":"Circuit_A",
         "circuit_b_name":"Circuit_B",
         "circuit_a":"C:\\Users\\katar\\Downloads\\pmos-switch-circuit-A.asc",
+        "quantity_to_manufacture_A":"50",
         "circuit_b":"-",
         "threshold":25,
         "Bill_of_Materials":"C:\\Users\\katar\\Desktop\\BOM_text_file.txt",
