@@ -1,4 +1,3 @@
-from logging import config
 from anyio import open_file
 from robocorp.tasks import task
 from robocorp import browser
@@ -7,20 +6,22 @@ from RPA.Desktop.Windows import Desktop
 import json
 import time
 
-#Place for global variables
+# Global desktop helpers
 desktop = windows.desktop()
-desktop2=Desktop()
+desktop2 = Desktop()
 
 
 @task
 def main():
+    """Main entry: run LTspice, validate voltage, and create Odoo records."""
+
     browser.configure(slowmo=500)
 
     open_ltspice()
-    
-    is_ok=extract_voltage()
+
+    is_ok = extract_voltage()
     if is_ok:
-        component_list=get_components()
+        component_list = get_components()
     else:
         print("Voltage check failed. Process halted.")
 
@@ -29,159 +30,174 @@ def main():
     add_BOM(component_list)
     add_manufacturing_order()
 
-def json_function():
+def json_extract_info():
+    """Load and return configuration from config.json.
+    Copied from the lecture
+    Returns an object parsed from JSON.
+    """
     with open("config.json") as f:
         return json.load(f)
-'''Done by Sebastian Szetela'''
 
 
 def open_ltspice():
-    config=json_function()
+    """Open LTspice, load the circuit, run simulation and copy the output log to clipboard.
+    Done by Sebastian Szetela"""
+    config = json_extract_info()
     desktop.windows_run(config["ltspice"])
-    ltspice = windows.find_window('regex:.*LTspice',search_depth=1)
-    ltspice.send_keys("{Ctrl}o") #open a new file
-    open_file=windows.find_window("regex:.*Open.",search_depth=2)
+    ltspice = windows.find_window('regex:.*LTspice', search_depth=1)
+    ltspice.send_keys("{Ctrl}o")
+    open_file = windows.find_window("regex:.*Open.", search_depth=2)
     open_file.send_keys(config["circuit_a"])
     time.sleep(0.2)
     open_file.send_keys("{Enter}")
 
-    ltspice.set_window_pos(0,0,desktop.width/2,desktop.height)
-    ltspice.find("name:Run/Pause").click() #had to change this cuz the alt + r didnt work = the signal panel wasnt showing up
-    
+    ltspice.set_window_pos(0, 0, desktop.width / 2, desktop.height)
+    ltspice.find("name:Run/Pause").click()
+
     time.sleep(2)
-    ltspice.send_keys("{Ctrl}l")#opens the output log
-    ltspice.find("automationid:1178").click() #clicks on the text
-    desktop.send_keys("{Ctrl}a")#select all text
-    desktop.send_keys("{Ctrl}c")#copies the text
-    ltspice.find("automationid:1178").click() #clicks on the text
-    ltspice.find("name:Close").click()#this is the path for the x button to close the log window
-    '''This function opens LTspice and runs the desired circuit, then copies the log data to clipboard. Done by Katie and Sebastian'''
+    ltspice.send_keys("{Ctrl}l")
+    ltspice.find("automationid:1178").click()
+    desktop.send_keys("{Ctrl}a")
+    desktop.send_keys("{Ctrl}c")
+    ltspice.find("automationid:1178").click()
+    ltspice.find("name:Close").click()
 
 def extract_voltage():
-    config=json_function()
-    threshold=config["threshold"]
-    raw_text=desktop2.get_clipboard_value()
+    """Parse the clipboard LTspice log and verify the measured voltage against threshold.
+    Returns True if within threshold, False if exceeds, or None on parse error.
+    Text splits done by Katie Culenova, voltage check and error handling done by Sebastian Szetela
+    """
+    config = json_extract_info()
+    threshold = config["threshold"]
+    raw_text = desktop2.get_clipboard_value()
     try:
-        row=raw_text.split("\n")[16]
-        voltage_string=row.split(" ")[1]
-        voltage=float(voltage_string.split("=")[1])
+        row = raw_text.split("\n")[16]
+        voltage_string = row.split(" ")[1]
+        voltage = float(voltage_string.split("=")[1])
         print(f"Extracted voltage: {voltage}")
-        if voltage<=float(threshold):
+        if voltage <= float(threshold):
             print("Voltage is within approved threshold. Continuing.")
-            return True
+            return voltage, True
         else:
             print("Voltage exceeds approved threshold. Halting process.")
-            return False
+            return voltage, False
     except Exception as e:
         print(f"Error extracting voltage: {e}")
         return None
-'''Text splits done by Katie Culenova, voltage check and error handling done by Sebastian Szetela'''
 
 def get_components():
-    #if voltage is within approved voltage, this function runs
-    config=json_function()
-    BOM_location=config["Bill_of_Materials"]
+    """Copy BOM from LTspice, save to a file and return a parts dictionary.
+    Returns a dict mapping reference -> metadata for required components.
+    Done by Katarina Culenova  
+    """
+    config = json_extract_info()
+    BOM_location = config["Bill_of_Materials"]
 
-    BOM_dictionary={}
+    BOM_dictionary = {}
     ltspice = windows.find_window('regex:.*LTspice')
 
     ltspice.find("name:View").click()
     ltspice.find("name:Bill of Materials").mouse_hover()
-    ltspice.find("Paste to clipboard").click() #copies the BOM to clipboard
-    bom=desktop2.get_clipboard_value()
+    ltspice.find("Paste to clipboard").click()
+    bom = desktop2.get_clipboard_value()
 
     desktop.windows_run(BOM_location)
-    note = windows.find_window("regex:.*BOM_text_file") #opens the bom file from the json
+    note = windows.find_window("regex:.*BOM_text_file")
     note.send_keys(bom)
     note.send_keys("{Ctrl}s")
 
-    
-    #EXTRACTING THE FIRST PART INFORMATION IN THE LIST
-    bom_line_M1=bom.split("\n")[3] #splits the string by new lines and saves the first part information line
-    bom_M1=bom_line_M1.split("\t") #splits the first part line by tabs
+    bom_line_M1 = bom.split("\n")[3]
+    bom_M1 = bom_line_M1.split("\t")
 
-    #EXTRACTING THE SECOND MATERIAL IN THE LIST
-    bom_line_Q1=bom.split("\n")[4] 
-    bom_Q1=bom_line_Q1.split("\t") 
+    bom_line_Q1 = bom.split("\n")[4]
+    bom_Q1 = bom_line_Q1.split("\t")
 
-    #EXTRACTING THE THIRD MATERIAL IN THE LIST
-    bom_line_R1=bom.split("\n")[5] 
-    bom_R1=bom_line_R1.split("\t")
+    bom_line_R1 = bom.split("\n")[5]
+    bom_R1 = bom_line_R1.split("\t")
 
-    #EXTRACTING THE FOURTH MATERIAL IN THE LIST
-    bom_line_R2=bom.split("\n")[6] 
-    bom_R2=bom_line_R2.split("\t")
-    
-    #EXTRACTING THE FIFTH MATERIAL IN THE LIST
-    bom_line_R3=bom.split("\n")[7] 
-    bom_R3=bom_line_R3.split("\t")
+    bom_line_R2 = bom.split("\n")[6]
+    bom_R2 = bom_line_R2.split("\t")
 
-    BOM_dictionary={
-                bom_M1[0]:{"Manufacturer:":bom_M1[1],"Part Number:":bom_M1[2],"Name:":bom_M1[3]},
-                bom_Q1[0]:{"Manufacturer:":bom_Q1[1],"Part Number:":bom_Q1[2],"Name:":bom_Q1[3]},
-                bom_R1[0]:{"Manufacturer:":bom_R1[1],"Part Number:":bom_R1[2],"Name:":bom_R1[3]},
-                bom_R2[0]:{"Manufacturer:":bom_R2[1],"Part Number:":bom_R2[2],"Name:":bom_R2[3]},
-                bom_R3[0]:{"Manufacturer:":bom_R3[1],"Part Number:":bom_R3[2],"Name:":bom_R3[3]}
+    bom_line_R3 = bom.split("\n")[7]
+    bom_R3 = bom_line_R3.split("\t")
+
+    BOM_dictionary = {
+        bom_M1[0]: {"Manufacturer:": bom_M1[1], "Part Number:": bom_M1[2], "Name:": bom_M1[3]},
+        bom_Q1[0]: {"Manufacturer:": bom_Q1[1], "Part Number:": bom_Q1[2], "Name:": bom_Q1[3]},
+        bom_R1[0]: {"Manufacturer:": bom_R1[1], "Part Number:": bom_R1[2], "Name:": bom_R1[3]},
+        bom_R2[0]: {"Manufacturer:": bom_R2[1], "Part Number:": bom_R2[2], "Name:": bom_R2[3]},
+        bom_R3[0]: {"Manufacturer:": bom_R3[1], "Part Number:": bom_R3[2], "Name:": bom_R3[3]},
     }
     return BOM_dictionary
-'''Done by Katie Culenova'''
-
-def open_login_odoo():
-    config=json_function()
+def open_login_odoo(): 
+    config=json_extract_info()
     browser.goto(config["odoo_url"])
-    page=browser.page()
-    page.fill('#login',config["odoo_user"])
-    page.fill('#password',config["odoo_pass"])
+    page = browser.page()
+    page.fill('#login', config["odoo_user"])
+    page.fill('#password', config["odoo_pass"])
     time.sleep(1)
     page.click("button:text('Log in')")
     page.wait_for_selector("#result_app_4")
-    '''Done by Sebastian Szetela'''
+'''Opens the odoo site and logs in using json file information. Done by Sebastian Szetela'''
 
 def add_product():
-    config=json_function()
-    page=browser.page()
-    page.locator("#result_app_4").click() #clicks on "manufacturing"
+    """Create a new product in Odoo using name from config.
+    Done by Katarina Culenova and Sebastian Szetela"""
+    config = json_extract_info()
+    page = browser.page()
+    page.locator("#result_app_4").click()
     page.wait_for_selector("button.fw-normal:nth-child(4) > span:nth-child(1)")
-    page.locator("button.fw-normal:nth-child(4) > span:nth-child(1)").click() #clicks on "products" dropdown menu
-    page.locator(".o_popover > a:nth-child(1)").click() #clicks on "Products"
+    page.locator("button.fw-normal:nth-child(4) > span:nth-child(1)").click()
+    page.locator(".o_popover > a:nth-child(1)").click()
     page.locator("button:text('New')").click()
-    page.locator("#name_0").fill(config["circuit_a_name"])#gets the first part's name
-    page.locator(".o_form_button_save").click()#saves the part
+    page.locator("#name_0").fill(config["circuit_a_name"])
+    page.locator(".o_form_button_save").click()
 
 def add_BOM(component_list):
-    config=json_function()
-    page=browser.page()
-    page.locator(".o_menu_brand").click()#goes back to main page
-    page.wait_for_selector("#result_app_4")
-    page.locator("#result_app_4").click() #clicks on "manufacturing"
-    page.wait_for_selector("button.fw-normal:nth-child(4) > span:nth-child(1)")
-    page.locator("button.fw-normal:nth-child(4) > span:nth-child(1)").click() #clicks on "products" dropdown menu
-    page.locator("a.o-dropdown-item:nth-child(2)").click()#clicks on "Bill of Materials" 
+    """Add Bill of Materials lines to Odoo for the current product.
+    Done by Katarina Culenova, error handling and troubleshooting by Sebastian Szetela
+    """
+    config = json_extract_info()
+    page = browser.page()
+    try:
+        page.locator(".o_menu_brand").click()
+        page.wait_for_selector("#result_app_4")
+        page.locator("#result_app_4").click()
+        page.wait_for_selector("button.fw-normal:nth-child(4) > span:nth-child(1)")
+        page.locator("button.fw-normal:nth-child(4) > span:nth-child(1)").click()
+        page.locator("a.o-dropdown-item:nth-child(2)").click()
 
-    page.locator("button:text('New')").click() #clicks on "New"
-    page.locator("#product_tmpl_id_0").fill(config["circuit_a_name"])#fills in the circuit name form the json file
-    desktop.send_keys("{Enter}")#saves the name
-
-    for ref, data in component_list.items():
-        print(f"Adding {ref}: {data['Manufacturer:']} {data['Part Number:']}")
-
-        page.locator(".o_field_x2many_list_row_add > a:nth-child(1)").click() #click add new line
-        desktop.send_keys(data["Manufacturer:"])#fills in "Manufacturer"
-        desktop.send_keys(" ")
-        desktop.send_keys(data["Part Number:"])#fills in "Part NUmber"
+        page.locator("button:text('New')").click()
+        page.locator("#product_tmpl_id_0").fill(config["circuit_a_name"])
         desktop.send_keys("{Enter}")
-        page.locator(".o_form_button_save").click()#saves the Bill of Materials
+
+        for ref, data in component_list.items():
+            print(f"Adding {ref}: {data['Manufacturer:']} {data['Part Number:']}")
+
+            page.locator(".o_field_x2many_list_row_add > a:nth-child(1)").click()
+            desktop.send_keys(data["Manufacturer:"])
+            desktop.send_keys(" ")
+            desktop.send_keys(data["Part Number:"])
+            desktop.send_keys("{Enter}")
+            page.locator(".o_form_button_save").click()
+    except Exception as e:
+        print(f"Error -", e)
 
 def add_manufacturing_order():
-    config=json_function()
-    page=browser.page()
-    page.locator("button.fw-normal:nth-child(2)").click() #clicks on Operations
-    page.locator("a:text('Manufacturing Orders')").click()#clicks on Manufacturing Orders
-    page.locator("button:text('New')").click()#clicks on new
-    page.locator("#product_id_0").fill(config["circuit_a_name"])#names the new order from the json file
-    desktop.send_keys("{Enter}")
+    """Create a manufacturing order in Odoo using product and quantity from config.
+    Done by Katarina Culenova, error handling and troubleshooting by Sebastian Szetela"""
+    config = json_extract_info()
+    page = browser.page()
+    try:
+        page.locator("button.fw-normal:nth-child(2)").click()
+        page.locator("a:text('Manufacturing Orders')").click()
+        page.locator("button:text('New')").click()
+        page.locator("#product_id_0").fill(config["circuit_a_name"])
+        desktop.send_keys("{Enter}")
 
-    page.locator("#product_qty_0").fill(config["quantity_to_manufacture_A"])#sets the quantity from the json file
-    page.locator(".o_form_button_save").click()# saves the order
-    page.screenshot(path=".output\manufacturing_order.png") #takes a screenshot of the manufacturing order
-    time.sleep(5)
+        page.locator("#product_qty_0").fill(config["quantity_to_manufacture_A"])
+        page.locator(".o_form_button_save").click()
+        page.screenshot(path=".output\manufacturing_order.png")
+        time.sleep(5)
+    except Exception as e:
+        print(f"Error -", e)
