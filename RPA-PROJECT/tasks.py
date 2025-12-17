@@ -3,6 +3,7 @@ from robocorp.tasks import task
 from robocorp import browser
 from robocorp import windows
 from RPA.Desktop.Windows import Desktop
+from robocorp import log
 import json
 import time
 
@@ -14,21 +15,48 @@ desktop2 = Desktop()
 @task
 def main():
     """Main entry: run LTspice, validate voltage, and create Odoo records."""
-
     browser.configure(slowmo=500)
-
+    log.console_message("START: Automation started", "info")
     open_ltspice()
 
-    is_ok = extract_voltage()
-    if is_ok:
-        component_list = get_components()
-    else:
-        print("Voltage check failed. Process halted.")
-
+    voltage, is_ok = extract_voltage()
+    if not is_ok:
+        log.console_message(
+            f"FAIL: Voltage {voltage} exceeds approved threshold. Process halted.",
+            "error"
+        )
+        close_ltspice()
+        return
+    
+    component_list = get_components()
     open_login_odoo()
-    add_product()
-    add_BOM(component_list)
-    add_manufacturing_order()
+
+    try:
+        add_product()
+        log.console_message("SUCCESS: Product creation completed", "info")
+    except Exception as e:
+        log.console_message(f"FAIL: Product creation failed: {e}", "error")
+        return
+
+    try:
+        add_BOM(component_list)
+        log.console_message("SUCCESS: BOM creation completed", "info")
+    except Exception as e:
+        log.console_message(f"FAIL: BOM creation failed: {e}", "error")
+        return
+    
+    try:
+        add_manufacturing_order()
+        log.console_message("SUCCESS: Manufacturing order creation completed", "info")
+    except Exception as e:
+        log.console_message(f"FAIL: Manufacturing order creation failed: {e}", "error")
+        return
+    close_ltspice()
+    close_browser()
+    close_notepad()
+    log.console_message("END: Automation finished successfully", "info")
+
+
 
 def json_extract_info():
     """Load and return configuration from config.json.
@@ -42,25 +70,36 @@ def json_extract_info():
 def open_ltspice():
     """Open LTspice, load the circuit, run simulation and copy the output log to clipboard.
     Done by Sebastian Szetela"""
-    config = json_extract_info()
-    desktop.windows_run(config["ltspice"])
-    ltspice = windows.find_window('regex:.*LTspice', search_depth=1)
-    ltspice.send_keys("{Ctrl}o")
-    open_file = windows.find_window("regex:.*Open.", search_depth=2)
-    open_file.send_keys(config["circuit_a"])
-    time.sleep(0.2)
-    open_file.send_keys("{Enter}")
+    try:
+        config = json_extract_info()
+        desktop.windows_run(config["ltspice"])
 
-    ltspice.set_window_pos(0, 0, desktop.width / 2, desktop.height)
-    ltspice.find("name:Run/Pause").click()
+        ltspice = windows.find_window('regex:.*LTspice', search_depth=1)
+        ltspice.send_keys("{Ctrl}o")
 
-    time.sleep(2)
-    ltspice.send_keys("{Ctrl}l")
-    ltspice.find("automationid:1178").click()
-    desktop.send_keys("{Ctrl}a")
-    desktop.send_keys("{Ctrl}c")
-    ltspice.find("automationid:1178").click()
-    ltspice.find("name:Close").click()
+        open_file = windows.find_window("regex:.*Open.", search_depth=2)
+        open_file.send_keys(config["circuit_a"])
+        time.sleep(0.2)
+        open_file.send_keys("{Enter}")
+
+        ltspice.set_window_pos(0, 0, desktop.width / 2, desktop.height)
+        ltspice.find("name:Run/Pause").click()
+
+        time.sleep(2)
+        ltspice.send_keys("{Ctrl}l")
+        ltspice.find("automationid:1178").click()
+        desktop.send_keys("{Ctrl}a")
+        desktop.send_keys("{Ctrl}c")
+        ltspice.find("automationid:1178").click()
+        ltspice.find("name:Close").click()
+
+    except Exception as e:
+        log.console_message(
+            f"FAIL: Unable to start LTSpice or open circuit file: {e}",
+            "error"
+        )
+        close_ltspice()
+        raise
 
 def extract_voltage():
     """Parse the clipboard LTspice log and verify the measured voltage against threshold.
@@ -71,7 +110,7 @@ def extract_voltage():
     threshold = config["threshold"]
     raw_text = desktop2.get_clipboard_value()
     try:
-        row = raw_text.split("\n")[16]
+        row = raw_text.split("\n")[-2]
         voltage_string = row.split(" ")[1]
         voltage = float(voltage_string.split("=")[1])
         print(f"Extracted voltage: {voltage}")
@@ -82,8 +121,8 @@ def extract_voltage():
             print("Voltage exceeds approved threshold. Halting process.")
             return voltage, False
     except Exception as e:
-        print(f"Error extracting voltage: {e}")
-        return None
+        log.console_message(f"FAIL: Error extracting voltage: {e}", "error")
+        return None, False
 
 def get_components():
     """Copy BOM from LTspice, save to a file and return a parts dictionary.
@@ -130,14 +169,24 @@ def get_components():
     }
     return BOM_dictionary
 def open_login_odoo(): 
-    config=json_extract_info()
-    browser.goto(config["odoo_url"])
-    page = browser.page()
-    page.fill('#login', config["odoo_user"])
-    page.fill('#password', config["odoo_pass"])
-    time.sleep(1)
-    page.click("button:text('Log in')")
-    page.wait_for_selector("#result_app_4")
+    try:
+        config = json_extract_info()
+        browser.goto(config["odoo_url"])
+        page = browser.page()
+        page.fill('#login', config["odoo_user"])
+        page.fill('#password', config["odoo_pass"])
+        time.sleep(1)
+        page.click("button:text('Log in')")
+        page.wait_for_selector("#result_app_4")
+
+    except Exception as e:
+        log.console_message(
+            f"FAIL: Odoo login failed. Check URL or credentials. Error: {e}",
+            "error"
+        )
+        close_ltspice()
+        close_browser()
+        raise
 '''Opens the odoo site and logs in using json file information. Done by Sebastian Szetela'''
 
 def add_product():
@@ -201,3 +250,24 @@ def add_manufacturing_order():
         time.sleep(5)
     except Exception as e:
         print(f"Error -", e)
+
+def close_ltspice():
+    """Safely close the LTspice application if it is running. Done by Katarina Culenova"""
+    try:
+        ltspice = windows.find_window('regex:.*LTspice', search_depth=1)
+        ltspice.close_window()
+    except Exception:
+        pass
+def close_browser():
+    """Safely close the browser if it is running. Done by Katarina Culenova"""
+    try:
+        browser.close_all()
+    except Exception:
+        pass
+def close_notepad():
+    """Safely close Notepad if it is running. Done by Katarina Culenova"""
+    try:
+        note = windows.find_window("regex:.*BOM_text_file", search_depth=1)
+        note.close_window()
+    except Exception:
+        pass
